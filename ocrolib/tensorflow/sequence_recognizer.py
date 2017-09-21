@@ -3,11 +3,12 @@ from ocrolib.lstm import normalize_nfkc, translate_back, make_target, ctc_align_
 from scipy.ndimage import measurements,filters
 from ocrolib.edist import levenshtein
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 
 class SequenceRecognizer:
     """Perform sequence recognition using BIDILSTM and alignment."""
-    def __init__(self, ninput, nstates, noutput=-1, codec=None, normalize=normalize_nfkc, load_file=None):
+    def __init__(self, ninput, nstates, noutput=-1, batch_size=1, codec=None, normalize=normalize_nfkc, load_file=None):
         self.Ni = ninput
         if codec: noutput = codec.size()
         assert(noutput > 0)
@@ -18,9 +19,9 @@ class SequenceRecognizer:
         self.codec = codec
         self.clear_log()
         if load_file is not None:
-            self.model = Model.load(load_file, learning_rate=self.learning_rate)
+            self.model = Model.load(load_file, batch_size=batch_size, learning_rate=self.learning_rate)
         else:
-            self.model = Model.create(ninput, nstates, self.No, learning_rate=self.learning_rate)
+            self.model = Model.create(ninput, nstates, self.No, batch_size=batch_size, learning_rate=self.learning_rate)
         self.command_log = []
         self.error_log = []
         self.cerror_log = []
@@ -64,10 +65,17 @@ class SequenceRecognizer:
 
     def trainSequence(self,xs,cs,update=1,key=None):
         "Train with an integer sequence of codes."
-        assert xs.shape[1]==self.Ni,"wrong image height"
+        for x in xs: assert(x.shape[-1] == self.Ni, "wrong image height")
+        start_time = time.time()
         cost, self.outputs = self.model.train_sequence(xs, cs)
-        assert(xs.shape[0] == self.outputs.shape[0])
-        assert(self.outputs.shape[1] == self.No)
+        print("LSTM-CTC train step took %f s" % (time.time() - start_time))
+        assert(len(xs) == self.outputs.shape[0])
+        assert(self.outputs.shape[-1] == self.No)
+
+        # only print first batch entry
+        xs = xs[0]
+        cs = cs[0]
+        self.outputs = self.outputs[0]
 
         result = translate_back(self.outputs)
 

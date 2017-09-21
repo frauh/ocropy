@@ -107,37 +107,64 @@ class Model:
         with self.graph.as_default():
             return self.session.run([self.logits], {self.inputs: np.expand_dims(x, axis=0)})
 
-    def to_sparse_matrix(self, y, y_len):
-        assert(y.shape[0] == len(y_len))
-        assert(y.shape[0] == self.batch_size)
+    def to_sparse_matrix(self, y, y_len=None):
+        if y_len is not None:
+            assert(y.shape[0] == len(y_len))
+            assert(y.shape[0] == self.batch_size)
 
-        # transform [[1, 2, 5, 2], [4, 2, 1, 6, 7]]
-        # to [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)]
-        #    [1, 2, 5, 2, 4, 2, 1, 6, 7]
-        #    [2, max(4, 5)]
-        indices = np.concatenate([np.concatenate(
-            [
-                np.full((y_len[i], 1), i),
-                np.reshape(range(y_len[i]), (-1, 1))
-            ], 1) for i in range(self.batch_size)], 0)
-        values = np.concatenate([
-            y[i, :y_len[i]] - 1 # tensorflow ctc expects label [-1] to be blank, not 0 as ocropy
-            for i in range(self.batch_size)
-        ], 0)
-        dense_shape = np.asarray([self.batch_size, max(y_len)])
+            # transform [[1, 2, 5, 2], [4, 2, 1, 6, 7]]
+            # to [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)]
+            #    [1, 2, 5, 2, 4, 2, 1, 6, 7]
+            #    [2, max(4, 5)]
+            indices = np.concatenate([np.concatenate(
+                [
+                    np.full((y_len[i], 1), i),
+                    np.reshape(range(y_len[i]), (-1, 1))
+                ], 1) for i in range(self.batch_size)], 0)
+            values = np.concatenate([
+                y[i, :y_len[i]] - 1 # tensorflow ctc expects label [-1] to be blank, not 0 as ocropy
+                for i in range(self.batch_size)
+            ], 0)
+            dense_shape = np.asarray([self.batch_size, max(y_len)])
 
-        #print(indices, values, dense_shape)
+            #print(indices, values, dense_shape)
+
+        else:
+            assert(len(y) == self.batch_size)
+            indices = np.concatenate([np.concatenate(
+                [
+                    np.full((len(y[i]), 1), i),
+                    np.reshape(range(len(y[i])), (-1, 1))
+                ], 1) for i in range(self.batch_size)], 0)
+            values = np.concatenate(y, 0) - 1  # correct ctc label
+            dense_shape = np.asarray([self.batch_size, max([len(yi) for yi in y])])
+            assert(len(indices) == len(values))
 
         return indices, values, dense_shape
 
-    def train_sequence(self, x, y):
-        x = np.expand_dims(x, axis=0)
-        y = self.to_sparse_matrix(np.expand_dims(y, axis=0), [len(y)])
+    def sparse_data_to_dense(self, x):
+        assert(len(x) == self.batch_size)
+        len_x = [xb.shape[0] for xb in x]
+        max_line_length = max(len_x)
 
-        #with self.graph.as_default():
+        # transform into batch (batch size, T, height)
+        full_x = np.zeros((self.batch_size, max_line_length, x[0].shape[1]))
+        for batch, xb in enumerate(x):
+            full_x[batch, :len(xb)] = xb
+
+        return full_x, len_x
+
+    def train_sequence(self, x, y):
+        # x = np.expand_dims(x, axis=0)
+        # y = self.to_sparse_matrix(np.expand_dims(y, axis=0), [len(y)])
+        x, len_x = self.sparse_data_to_dense(x)
+        y = self.to_sparse_matrix(y)
+
+        # with self.graph.as_default():
         cost, optimizer, logits = self.session.run([self.cost, self.optimizer, self.logits],
-                                    feed_dict={self.inputs: x,
-                                     self.targets: y,
-                                     self.seq_len: [len(xd) for xd in x]})
+                                                   feed_dict={self.inputs: x,
+                                                              self.seq_len: len_x,
+                                                              self.targets: y,
+                                                              })
         logits = np.roll(logits, 1, axis=2)
-        return cost, logits[0]
+        return cost, logits
