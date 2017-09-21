@@ -13,6 +13,7 @@ import numpy
 from ocrolib import lineest
 import ocrolib.lstm as lstm
 import traceback
+import time
 
 numpy.seterr(divide='raise',over='raise',invalid='raise',under='ignore')
 
@@ -33,6 +34,8 @@ parser.add_argument("-c","--codec",default=[],nargs='*',
                     help="construct a codec from the input text")
 
 # learning
+parser.add_argument("-T","--tensorflow",action="store_true",
+                    help="use Tensorflor LSTM and CTC backend")
 parser.add_argument("-C","--clstm",action="store_true",
                     help="use C++ LSTM")
 parser.add_argument("-r","--lrate",type=float,default=1e-4,
@@ -154,7 +157,9 @@ codec = lstm.Codec().init(charset)
 # modules and new style C++ LSTM networks.
 
 def save_lstm(fname,network):
-    if args.clstm:
+    if args.tensorflow:
+        network.model.save(fname)
+    elif args.clstm:
         network.lstm.save(fname)
     else:
         if args.strip:
@@ -165,7 +170,12 @@ def save_lstm(fname,network):
             for x in network.walk(): x.postLoad()
 
 def load_lstm(fname):
-    if args.clstm:
+    if args.tensorflow:
+        import ocrolib.tensorflow as tf_backend
+        network = tf_backend.SequenceRecognizer(args.height, args.hiddensize,
+                                                codec=codec, normalize=lstm.normalize_nfkc, load_file=fname)
+        return network
+    elif args.clstm:
         network = lstm.SeqRecognizer(args.height,args.hiddensize,
             codec=codec,
             normalize=lstm.normalize_nfkc)
@@ -187,14 +197,18 @@ if args.load:
     network = load_lstm(args.load)
 else:
     last_save = None
-    network = lstm.SeqRecognizer(args.height,args.hiddensize,
-        codec=codec,
-        normalize=lstm.normalize_nfkc)
-    if args.clstm:
-        import clstm
-        mylstm = clstm.make_BIDILSTM()
-        mylstm.init(network.No,args.hiddensize,network.Ni)
-        network.lstm = clstm.CNetwork(mylstm)
+    if args.tensorflow:
+        import ocrolib.tensorflow as tf_backend
+        network = tf_backend.SequenceRecognizer(args.height, args.hiddensize, codec=codec, normalize=lstm.normalize_nfkc)
+    else:
+        network = lstm.SeqRecognizer(args.height,args.hiddensize,
+            codec=codec,
+            normalize=lstm.normalize_nfkc)
+        if args.clstm:
+            import clstm
+            mylstm = clstm.make_BIDILSTM()
+            mylstm.init(network.No,args.hiddensize,network.Ni)
+            network.lstm = clstm.CNetwork(mylstm)
 
 if getattr(network,"lnorm",None) is None:
     network.lnorm = lnorm
@@ -249,6 +263,7 @@ def plot_network_info(network,transcript,pred,gta):
 start = args.start if args.start>=0 else network.last_trial
 
 for trial in range(start,args.ntrain):
+    trial_start = time.time()
     network.last_trial = trial+1
 
     do_display = (args.display>0 and trial%args.display==0)
@@ -285,6 +300,7 @@ for trial in range(start,args.ntrain):
         w = line.shape[1]
         line = vstack([zeros((args.pad,w)),line,zeros((args.pad,w))])
     cs = array(codec.encode(transcript),'i')
+    train_start = time.time()
     try:
         pcs = network.trainSequence(line,cs,update=do_update,key=fname)
     except FloatingPointError as e:
@@ -294,6 +310,7 @@ for trial in range(start,args.ntrain):
         continue
     except lstm.RangeError as e:
         continue
+    train_end = time.time()
     pred = "".join(codec.decode(pcs))
     acs = lstm.translate_back(network.aligned)
     gta = "".join(codec.decode(acs))
@@ -321,4 +338,8 @@ for trial in range(start,args.ntrain):
         if args.movie is not None:
             draw()
             savefig("%s-%08d.png"%(args.movie,trial),bbox_inches=0)
+
+    trial_end = time.time()
+    print(" * total time %f" % (trial_end - trial_start))
+    print(" * train time %f" % (train_end - train_start))
 
