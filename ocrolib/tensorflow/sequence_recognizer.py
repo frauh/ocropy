@@ -4,24 +4,35 @@ from scipy.ndimage import measurements,filters
 from ocrolib.edist import levenshtein
 import numpy as np
 import time
+from ocrolib import lineest
 import matplotlib.pyplot as plt
 
 class SequenceRecognizer:
+    @staticmethod
+    def load(fname):
+        import ocrolib
+        data = ocrolib.load_object(fname)
+        return SequenceRecognizer(**data)
+
     """Perform sequence recognition using BIDILSTM and alignment."""
-    def __init__(self, ninput, nstates, noutput=-1, batch_size=1, codec=None, normalize=normalize_nfkc, load_file=None):
-        self.Ni = ninput
-        if codec: noutput = codec.size()
-        assert(noutput > 0)
-        self.No = noutput + 1
+    def __init__(self, Ni=-1, nstates=-1, No=-1, codec=None, normalize=normalize_nfkc, load_file=None, lnorm=None):
+        self.Ni = Ni
+        if codec: No = codec.size()
+        self.No = No + 1
         self.learning_rate = 1e-2
         self.debug_align = 0
         self.normalize = normalize
         self.codec = codec
         self.clear_log()
-        if load_file is not None:
-            self.model = Model.load(load_file, batch_size=batch_size, learning_rate=self.learning_rate)
+        if lnorm is not None:
+            self.lnorm = lnorm
         else:
-            self.model = Model.create(ninput, nstates, self.No, batch_size=batch_size, learning_rate=self.learning_rate)
+            self.lnorm = lineest.CenterNormalizer()
+
+        if load_file is not None:
+            self.model = Model.load(load_file, learning_rate=self.learning_rate)
+        else:
+            self.model = Model.create(self.Ni, nstates, self.No, learning_rate=self.learning_rate)
         self.command_log = []
         self.error_log = []
         self.cerror_log = []
@@ -29,6 +40,12 @@ class SequenceRecognizer:
         self.last_trial = 0
 
         self.outputs = []
+
+    def save(self, fname):
+        import ocrolib
+        data = {"Ni": self.Ni, "No": self.No, "codec": self.codec, "lnorm": self.lnorm, "load_file": fname}
+        ocrolib.save_object(fname, data)
+        self.model.save(fname)
 
     def walk(self):
         for x in self.lstm.walk(): yield x
@@ -58,9 +75,11 @@ class SequenceRecognizer:
 
     def predictSequence(self,xs):
         "Predict an integer sequence of codes."
-        assert xs.shape[1]==self.Ni,\
-            "wrong image height (image: %d, expected: %d)"%(xs.shape[1],self.Ni)
-        self.outputs = self.model.predict_sequence(xs)
+        if self.Ni > 0:
+            assert xs.shape[1]==self.Ni,\
+                "wrong image height (image: %d, expected: %d)"%(xs.shape[1],self.Ni)
+        # only one batch
+        self.outputs = self.model.predict_sequence([xs])[0]
         return translate_back(self.outputs)
 
     def trainSequence(self,xs,cs,update=1,key=None):

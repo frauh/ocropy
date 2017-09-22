@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 from __future__ import print_function
 
@@ -165,7 +165,7 @@ codec = lstm.Codec().init(charset)
 
 def save_lstm(fname,network):
     if args.tensorflow:
-        network.model.save(fname)
+        network.save(fname)
     elif args.clstm:
         network.lstm.save(fname)
     else:
@@ -179,9 +179,7 @@ def save_lstm(fname,network):
 def load_lstm(fname):
     if args.tensorflow:
         import ocrolib.tensorflow as tf_backend
-        network = tf_backend.SequenceRecognizer(args.height, args.hiddensize,
-                                                batch_size=args.batchsize,
-                                                codec=codec, normalize=lstm.normalize_nfkc, load_file=fname)
+        network = tf_backend.SequenceRecognizer.load(fname)
         return network
     elif args.clstm:
         network = lstm.SeqRecognizer(args.height,args.hiddensize,
@@ -208,7 +206,6 @@ else:
     if args.tensorflow:
         import ocrolib.tensorflow as tf_backend
         network = tf_backend.SequenceRecognizer(args.height, args.hiddensize,
-                                                batch_size=args.batchsize,
                                                 codec=codec, normalize=lstm.normalize_nfkc)
     else:
         network = lstm.SeqRecognizer(args.height,args.hiddensize,

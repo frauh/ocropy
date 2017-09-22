@@ -8,7 +8,7 @@ import numpy as np
 class Model:
 
     @staticmethod
-    def load(filename, batch_size=1, learning_rate=1e-3):
+    def load(filename, learning_rate=1e-3):
         graph = tf.Graph()
         with graph.as_default() as g:
             session = tf.Session(graph=graph)
@@ -29,17 +29,18 @@ class Model:
                 decoded = g.get_tensor_by_name("decoded:0")
                 logits = g.get_tensor_by_name("softmax:0")
 
-                return Model(graph, session, batch_size, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits)
+                return Model(graph, session, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits)
 
     @staticmethod
-    def create(num_features, num_hidden, num_classes, num_layers=1, batch_size=1, learning_rate=1e-3, reuse_variables=False):
+    def create(num_features, num_hidden, num_classes, num_layers=1, learning_rate=1e-3, reuse_variables=False):
         graph = tf.Graph()
         with graph.as_default():
             session = tf.Session(graph=graph)
 
-            inputs = tf.placeholder(tf.float32, shape=(batch_size, None, num_features), name="inputs")
-            seq_len = tf.placeholder(tf.int32, shape=(batch_size,), name="seq_len")
-            targets = tf.sparse_placeholder(tf.int32, shape=(batch_size, None), name="targets")
+            inputs = tf.placeholder(tf.float32, shape=(None, None, num_features), name="inputs")
+            batch_size = tf.shape(inputs)[0]
+            seq_len = tf.placeholder(tf.int32, shape=(None,), name="seq_len")
+            targets = tf.sparse_placeholder(tf.int32, shape=(None, None), name="targets")
 
             with tf.variable_scope("", reuse=reuse_variables) as scope:
 
@@ -77,9 +78,9 @@ class Model:
 
                 logits = tf.nn.softmax(logits, -1, "softmax")
 
-                return Model(graph, session, batch_size, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits)
+                return Model(graph, session, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits)
 
-    def __init__(self, graph, session, batch_size, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits):
+    def __init__(self, graph, session, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits):
         self.graph = graph
         self.session = session
         self.inputs = inputs
@@ -90,7 +91,6 @@ class Model:
         self.ler = ler
         self.decoded = decoded
         self.logits = logits
-        self.batch_size = batch_size
 
         with self.graph.as_default():
             # Initializate the weights and biases
@@ -103,14 +103,10 @@ class Model:
             saver = tf.train.Saver()
             saver.save(self.session, output_file)
 
-    def predict_sequence(self, x):
-        with self.graph.as_default():
-            return self.session.run([self.logits], {self.inputs: np.expand_dims(x, axis=0)})
-
     def to_sparse_matrix(self, y, y_len=None):
+        batch_size = len(y)
         if y_len is not None:
-            assert(y.shape[0] == len(y_len))
-            assert(y.shape[0] == self.batch_size)
+            assert(batch_size == len(y_len))
 
             # transform [[1, 2, 5, 2], [4, 2, 1, 6, 7]]
             # to [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)]
@@ -130,25 +126,24 @@ class Model:
             #print(indices, values, dense_shape)
 
         else:
-            assert(len(y) == self.batch_size)
             indices = np.concatenate([np.concatenate(
                 [
                     np.full((len(y[i]), 1), i),
                     np.reshape(range(len(y[i])), (-1, 1))
-                ], 1) for i in range(self.batch_size)], 0)
+                ], 1) for i in range(batch_size)], 0)
             values = np.concatenate(y, 0) - 1  # correct ctc label
-            dense_shape = np.asarray([self.batch_size, max([len(yi) for yi in y])])
+            dense_shape = np.asarray([batch_size, max([len(yi) for yi in y])])
             assert(len(indices) == len(values))
 
         return indices, values, dense_shape
 
     def sparse_data_to_dense(self, x):
-        assert(len(x) == self.batch_size)
+        batch_size = len(x)
         len_x = [xb.shape[0] for xb in x]
         max_line_length = max(len_x)
 
         # transform into batch (batch size, T, height)
-        full_x = np.zeros((self.batch_size, max_line_length, x[0].shape[1]))
+        full_x = np.zeros((batch_size, max_line_length, x[0].shape[1]))
         for batch, xb in enumerate(x):
             full_x[batch, :len(xb)] = xb
 
@@ -168,3 +163,8 @@ class Model:
                                                               })
         logits = np.roll(logits, 1, axis=2)
         return cost, logits
+
+    def predict_sequence(self, x):
+        x, len_x = self.sparse_data_to_dense(x)
+        return self.session.run([self.logits], feed_dict={self.inputs: x, self.seq_len: len_x})
+
