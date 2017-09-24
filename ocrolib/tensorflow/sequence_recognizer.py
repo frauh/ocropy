@@ -12,10 +12,12 @@ class SequenceRecognizer:
     def load(fname):
         import ocrolib
         data = ocrolib.load_object(fname)
+        data["load_file"] = fname
+        print(data)
         return SequenceRecognizer(**data)
 
     """Perform sequence recognition using BIDILSTM and alignment."""
-    def __init__(self, Ni=-1, nstates=-1, No=-1, codec=None, normalize=normalize_nfkc, load_file=None, lnorm=None):
+    def __init__(self, Ni, nstates=-1, No=-1, codec=None, normalize=normalize_nfkc, load_file=None, lnorm=None):
         self.Ni = Ni
         if codec: No = codec.size()
         self.No = No + 1
@@ -43,7 +45,8 @@ class SequenceRecognizer:
 
     def save(self, fname):
         import ocrolib
-        data = {"Ni": self.Ni, "No": self.No, "codec": self.codec, "lnorm": self.lnorm, "load_file": fname}
+        data = {"Ni": self.Ni, "No": self.No, "codec": self.codec, "lnorm": self.lnorm, "load_file": fname,
+                "normalize": self.normalize}
         ocrolib.save_object(fname, data)
         self.model.save(fname)
 
@@ -75,9 +78,7 @@ class SequenceRecognizer:
 
     def predictSequence(self,xs):
         "Predict an integer sequence of codes."
-        if self.Ni > 0:
-            assert xs.shape[1]==self.Ni,\
-                "wrong image height (image: %d, expected: %d)"%(xs.shape[1],self.Ni)
+        assert(xs.shape[1]==self.Ni, "wrong image height (image: %d, expected: %d)"%(xs.shape[1],self.Ni))
         # only one batch
         self.outputs = self.model.predict_sequence([xs])[0]
         return translate_back(self.outputs)

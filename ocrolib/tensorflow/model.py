@@ -9,6 +9,7 @@ class Model:
 
     @staticmethod
     def load(filename, learning_rate=1e-3):
+        print("Loading tensorflow model from root %s" % filename)
         graph = tf.Graph()
         with graph.as_default() as g:
             session = tf.Session(graph=graph)
@@ -78,6 +79,11 @@ class Model:
 
                 logits = tf.nn.softmax(logits, -1, "softmax")
 
+                # Initializate the weights and biases
+                init_op = tf.group(tf.global_variables_initializer(),
+                                   tf.local_variables_initializer())
+                session.run(init_op)
+
                 return Model(graph, session, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits)
 
     def __init__(self, graph, session, inputs, seq_len, targets, optimizer, cost, ler, decoded, logits):
@@ -91,12 +97,6 @@ class Model:
         self.ler = ler
         self.decoded = decoded
         self.logits = logits
-
-        with self.graph.as_default():
-            # Initializate the weights and biases
-            init_op = tf.group(tf.global_variables_initializer(),
-                               tf.local_variables_initializer())
-            self.session.run(init_op)
 
     def save(self, output_file):
         with self.graph.as_default() as g:
@@ -166,5 +166,7 @@ class Model:
 
     def predict_sequence(self, x):
         x, len_x = self.sparse_data_to_dense(x)
-        return self.session.run([self.logits], feed_dict={self.inputs: x, self.seq_len: len_x})
+        logits, = self.session.run([self.logits], feed_dict={self.inputs: x, self.seq_len: len_x})
+        logits = np.roll(logits, 1, axis=2)
+        return logits
 
