@@ -224,6 +224,8 @@ network.upgrade()
 if network.last_trial%100==99: network.last_trial += 1
 print("# last_trial", network.last_trial)
 
+# required if model was loaded
+codec = network.codec
 
 # set up the learning rate
 
