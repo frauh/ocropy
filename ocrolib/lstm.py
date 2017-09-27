@@ -888,6 +888,7 @@ class SeqRecognizer:
 
     def resize(self, No):
         self.output_layer.resize(No)
+        self.No = No
 
     def walk(self):
         for x in self.lstm.walk(): yield x
@@ -918,6 +919,10 @@ class SeqRecognizer:
     def trainSequence(self,xs,cs,update=1,key=None):
         "Train with an integer sequence of codes."
         assert xs.shape[1]==self.Ni,"wrong image height"
+        # check if the network needs resizing (blank is first label, so this is rather easy
+        if self.No != self.codec.size():
+            self.resize(self.codec.size())
+
         # forward step
         self.outputs = array(self.lstm.forward(xs))
         # CTC alignment
@@ -968,23 +973,47 @@ class SeqRecognizer:
 
 class Codec:
     """Translate between integer codes and characters."""
-    def init(self,charset):
-        charset = sorted(list(set(charset)))
+    def init(self, charset):
+        self.charset = sorted(list(set(charset)))
         self.code2char = {}
         self.char2code = {}
-        for code,char in enumerate(charset):
+        for code,char in enumerate(self.charset):
             self.code2char[code] = char
             self.char2code[char] = code
+
+        self.num_chars = len(self.charset)
         return self
+
     def size(self):
         """The total number of codes (use this for the number of output
         classes when training a classifier."""
-        return len(list(self.code2char.keys()))
-    def encode(self,s):
+        #return len(list(self.code2char.keys()))
+        return self.num_chars
+
+    def encode(self,s,allow_resize=True):
         "Encode the string `s` into a code sequence."
+        "If a char doesn't exist it will be automatically added"
+        "make sure to resize the net, if a new char was added"
         # tab = self.char2code
-        dflt = self.char2code["~"]
-        return [self.char2code.get(c,dflt) for c in s]
+        # dflt = self.char2code["~"]
+        # return [self.char2code.get(c,dflt) for c in s]
+        out = []
+        for c in s:
+            if c in self.char2code:
+                # add known
+                out.append(self.char2code[c])
+            elif allow_resize:
+                # add new
+                self.charset += c
+                self.char2code[c] = self.num_chars
+                self.code2char[self.num_chars] = c
+                self.num_chars += 1
+            else:
+                # add default
+                out.append(self.char2code["~"])
+
+        return out
+
     def decode(self,l):
         "Decode a code sequence into a string."
         s = [self.code2char.get(c,"~") for c in l]
