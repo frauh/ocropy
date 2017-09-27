@@ -116,8 +116,10 @@ try:
     if args.tensorflow:
         import ocrolib.tensorflow as tf_backend
         network = tf_backend.SequenceRecognizer.load(args.model)
+        network.post_load()
     else:
         network = ocrolib.load_object(args.model,verbose=1)
+        network.post_load()
         for x in network.walk(): x.postLoad()
         for x in network.walk():
             if isinstance(x,lstm.LSTM):

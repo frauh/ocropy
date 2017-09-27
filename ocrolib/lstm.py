@@ -900,7 +900,12 @@ class SeqRecognizer:
     def __setstate__(self,state):
         self.__dict__.update(state)
         self.upgrade()
+
+    def post_load(self):
+        self.codec.post_load()
+
     def upgrade(self):
+        self.codec.post_load()
         if "last_trial" not in dir(self): self.last_trial = 0
         if "command_log" not in dir(self): self.command_log = []
         if "error_log" not in dir(self): self.error_log = []
@@ -983,6 +988,10 @@ class Codec:
 
         self.num_chars = len(self.charset)
         return self
+
+    def post_load(self):
+        self.charset = sorted(list(self.code2char.keys()))
+        self.num_chars = len(self.charset)
 
     def size(self):
         """The total number of codes (use this for the number of output

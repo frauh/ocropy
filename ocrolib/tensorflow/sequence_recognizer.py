@@ -19,7 +19,10 @@ class SequenceRecognizer:
     """Perform sequence recognition using BIDILSTM and alignment."""
     def __init__(self, Ni, nstates=-1, No=-1, codec=None, normalize=normalize_nfkc, load_file=None, lnorm=None, learning_rate=1e-3):
         self.Ni = Ni
-        if codec: No = codec.size()
+        if codec:
+            codec.post_load()
+            No = codec.size()
+
         self.No = No + 1
         self.learning_rate = learning_rate
         self.debug_align = 0
@@ -62,6 +65,9 @@ class SequenceRecognizer:
     def __setstate__(self,state):
         self.__dict__.update(state)
         self.upgrade()
+
+    def post_load(self):
+        self.codec.post_load()
 
     def upgrade(self):
         if "last_trial" not in dir(self): self.last_trial = 0

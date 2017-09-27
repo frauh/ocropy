@@ -180,6 +180,7 @@ def load_lstm(fname):
     if args.tensorflow:
         import ocrolib.tensorflow as tf_backend
         network = tf_backend.SequenceRecognizer.load(fname)
+        network.post_load()
         return network
     elif args.clstm:
         network = lstm.SeqRecognizer(args.height,args.hiddensize,
@@ -190,11 +191,13 @@ def load_lstm(fname):
         mylstm.init(network.No,args.hiddensize,network.Ni)
         mylstm.load(fname)
         network.lstm = clstm.CNetwork(mylstm)
+        network.post_load()
         return network
     else:
         network = ocrolib.load_object(last_save)
         network.upgrade()
         for x in network.walk(): x.postLoad()
+        network.post_load()
         return network
 
 if args.load:
