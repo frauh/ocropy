@@ -299,6 +299,24 @@ class Softmax(Network):
         self.No = No
         self.W2 = randu(No,Nh+1)*initial_range
         self.DW2 = zeros((No,Nh+1))
+        self.initial_range = initial_range
+
+    def resize(self, No):
+        dif = No - self.No
+        if dif > 0:
+            # extend, but copy existing weights, fill extended with random
+            W2 = randu(No, self.Nh+1) * self.initial_range
+            DW2 = zeros((No, self.Nh + 1))
+            W2[:self.No,:] = self.W2
+            DW2[:self.No,:] = self.DW2
+            self.W2, self.DW2 = W2, DW2
+        elif dif < 0:
+            # shrink
+            self.W2 = self.W2[:No]
+            self.DW2 = self.DW2[:No]
+
+        self.No = No
+
     def ninputs(self):
         return self.Nh
     def noutputs(self):
@@ -717,7 +735,7 @@ def BIDILSTM(Ni,Ns,No):
     # logreg = Logreg(2*Ns,No)
     logreg = Softmax(2*Ns,No)
     stacked = Stacked([bidi,logreg])
-    return stacked
+    return logreg, stacked
 
 ################################################################
 # LSTM classification with forward/backward alignment ("CTC")
@@ -861,12 +879,16 @@ class SeqRecognizer:
         if codec: noutput = codec.size()
         assert noutput>0
         self.No = noutput
-        self.lstm = BIDILSTM(ninput,nstates,noutput)
+        self.output_layer, self.lstm = BIDILSTM(ninput,nstates,noutput)
         self.setLearningRate(1e-4)
         self.debug_align = 0
         self.normalize = normalize
         self.codec = codec
         self.clear_log()
+
+    def resize(self, No):
+        self.output_layer.resize(No)
+
     def walk(self):
         for x in self.lstm.walk(): yield x
     def clear_log(self):

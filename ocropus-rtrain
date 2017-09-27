@@ -206,7 +206,8 @@ else:
     if args.tensorflow:
         import ocrolib.tensorflow as tf_backend
         network = tf_backend.SequenceRecognizer(args.height, args.hiddensize,
-                                                codec=codec, normalize=lstm.normalize_nfkc)
+                                                codec=codec, normalize=lstm.normalize_nfkc,
+                                                learning_rate=args.lrate)
     else:
         network = lstm.SeqRecognizer(args.height,args.hiddensize,
             codec=codec,
